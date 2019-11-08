@@ -1,12 +1,14 @@
 // Vesion 3: Add Serial / Network comms selection
 
 // TODO  Check for leaking GByteArray from convertToTelecode calls
-
+#define G_LOG_USE_STRUCTURED
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <glob.h>
+#include <gtk/gtk.h>
+
 
 /* For network sockets */
 #include <sys/socket.h> 
@@ -16,13 +18,22 @@
 #include <string.h>
 #include <termios.h>
 #include <fcntl.h>
+#include <sys/types.h>
+#include <pwd.h>
+
+#include "Logging.h"
 
 
 
-#include <gtk/gtk.h>
+
+
 
 // Macro for geting widgets from the builder
 #define GETWIDGET(name,type) name=type(gtk_builder_get_object_checked (builder,#name))
+
+// Paths to directories. 
+//static GString *sharedPath = NULL;
+static GString *configPath = NULL;
 
 // Widgets etc
 static GtkComboBox *connectionCombobox;
@@ -33,7 +44,6 @@ GtkWidget *mainWindow;
 GtkWidget *makingConnectionDialog;
 GtkWidget *reconnectButton;
 gboolean reconnectButtonState = FALSE;
-gboolean waitingForPLTS = FALSE;
 
 GtkRecentManager *recentManager;
 GtkWidget *openRecentFileChooserDialog;
@@ -46,7 +56,7 @@ GtkWidget *chooseFormatDialog;
 GtkWidget *readerEchoButton;
 GtkWidget *editorDownloadButton;
 GtkWidget *downloadProgressBar;
-
+GtkWidget *useLocalHost;
 
 
 GtkWidget *tapeImageDrawingArea;
@@ -238,6 +248,11 @@ gboolean
 on_clearReaderTextButton_clicked(__attribute__((unused)) GtkButton *button,
 				 __attribute__((unused)) gpointer data);
 
+gboolean
+on_setDefaultAddressButton_clicked(__attribute__((unused)) GtkButton *button,
+				 __attribute__((unused)) gpointer data);
+
+
 static gboolean
 notTelecode(GdkEventKey *event,gboolean Online);
 
@@ -268,40 +283,56 @@ on_noConnectionButton_clicked(__attribute__((unused)) GtkButton *widget,
     return GDK_EVENT_PROPAGATE ;
 }
 
-#if 0
-void initCommsSerial(void)
+gboolean
+on_setDefaultAddressButton_clicked(__attribute__((unused)) GtkButton *button,
+				 __attribute__((unused)) gpointer data)
 {
-  struct termios newtio;
-  int serial_fd;
+    GString *address;
+    	GString *configFileName;
+	GIOChannel *file;
+	GError *error = NULL;
 
-  serial_fd = open("/dev/ttyUSB0",O_RDWR|O_NONBLOCK);
 
 
-  tcgetattr(serial_fd,&newtio);
-  cfsetospeed(&newtio,B57600);
-  newtio.c_cc[VMIN] = 0;
-  newtio.c_cc[VTIME] = 0;
-  cfmakeraw(&newtio);
-  newtio.c_cflag &= ~CRTSCTS;
-  tcsetattr(serial_fd,TCSANOW,&newtio);
 
-  E803_channel = g_io_channel_unix_new(serial_fd);
-  
-  g_io_add_watch(E803_channel,G_IO_IN  ,peripheral_message,NULL);
 
-  g_io_channel_set_encoding(E803_channel,NULL,NULL);
-  // Needs to be unbuffered otherwise interleaved reads and writes lead to
-  // "Illegal seek" errors !
-  g_io_channel_set_buffered(E803_channel,FALSE);
+    address = g_string_new(NULL);
+    g_string_printf(address,"%d.%d.%d.%d\n",
+			(int)gtk_adjustment_get_value(ipAdjustments[0]),
+			(int)gtk_adjustment_get_value(ipAdjustments[1]),
+			(int)gtk_adjustment_get_value(ipAdjustments[2]),
+			(int)gtk_adjustment_get_value(ipAdjustments[3]));
+
+
+    g_info("Adddress set to (%s)\n",address->str);
+    configFileName = g_string_new(configPath->str);
+    g_string_append(configFileName,"DefaultIP");
+
+    if((file = g_io_channel_new_file(configFileName->str,"w",&error)) == NULL)
+    {
+	g_warning("failed to open file %s due to %s\n",configFileName->str,error->message);
+	
+    }
+    else
+    {
+	g_io_channel_write_chars(file,address->str,-1,NULL,NULL);
+
+	g_io_channel_shutdown(file,TRUE,NULL);
+	g_io_channel_unref (file);
+
+
+    }
+    
+    return GDK_EVENT_PROPAGATE ;
 }
-#endif
+    
 
 
 gboolean
 on_serialConnectButton_clicked(__attribute__((unused)) GtkButton *button,
 			       __attribute__((unused)) gpointer data)
 {
-    gint active,result;
+    gint active;
     GtkTreeModel *model;
     GtkTreeIter iter;
     gchararray name;
@@ -333,107 +364,26 @@ on_serialConnectButton_clicked(__attribute__((unused)) GtkButton *button,
 
     E803_channel = g_io_channel_unix_new(serial_fd);
   
-    //g_io_add_watch(E803_channel,G_IO_IN  ,peripheral_message,NULL);
     RxWatchId = g_io_add_watch(E803_channel,G_IO_IN ,E803_messageHandler,NULL);
-    // Watches have incremented the ref count so OK to do this now.
-    //g_io_channel_unref(E803_channel);
 
     g_io_channel_set_encoding(E803_channel,NULL,NULL);
-    // Needs to be unbuffered otherwise interleaved reads and writes lead to
+    // Channel needs to be unbuffered otherwise interleaved reads and writes lead to
     // "Illegal seek" errors !
     g_io_channel_set_buffered(E803_channel,FALSE);
-    
 
-    //gtk_widget_show(mainWindow);
-    //gtk_widget_hide(connectionWindow);
-
-
-    // Check PLTS status
+    gtk_widget_hide(connectionWindow);
+    if(!gtk_widget_get_visible(mainWindow))
     {
-        GError *error = NULL;
-        gsize written;
-        gchar value[1];
-        value[0] = '\x83'; 
-        g_io_channel_write_chars(E803_channel,value,1,&written,&error);
-        if(error != NULL) printf("ERROR !=NULL %s %d\n",__FUNCTION__,__LINE__);
-        g_io_channel_flush(E803_channel,NULL);
+	gtk_widget_show(mainWindow);
     }
-
-    waitingForPLTS = TRUE;
-    
-    result = gtk_dialog_run (GTK_DIALOG (makingConnectionDialog));
-
-    printf("result = %d\n",result);
-   switch(result)
-    {
-    case GTK_RESPONSE_NONE:
-	printf("GTK_RESPONSE_NONE");
-	break;
-	
-    case GTK_RESPONSE_REJECT:
-	printf("GTK_RESPONSE_REJECT");
-	break;
-    case GTK_RESPONSE_ACCEPT:
-	printf("GTK_RESPONSE_ACCEPT");
-	break;
-    case GTK_RESPONSE_DELETE_EVENT:
-	printf("GTK_RESPONSE_DELETE_EVENT");
-	break;
-    case GTK_RESPONSE_OK:
-	// From connected handler.
-	gtk_widget_hide(connectionWindow);
-	if(!gtk_widget_get_visible(mainWindow))
-	{
-	     gtk_widget_show(mainWindow);
-	}
-	title = g_string_new(NULL);
-	g_string_printf(title,"Connected to PLTS via %s",name);
-	gtk_window_set_title(GTK_WINDOW(mainWindow),title->str);
-	g_string_free(title,TRUE);
+    title = g_string_new(NULL);
+    g_string_printf(title,"Connected to PLTS via %s",name);
+    gtk_window_set_title(GTK_WINDOW(mainWindow),title->str);
+    g_string_free(title,TRUE);
 				 
-	gtk_button_set_label(GTK_BUTTON(reconnectButton),"gtk-disconnect");
-	reconnectButtonState = TRUE;
-
-	
-	printf("GTK_RESPONSE_OK");
-	break;
-    case GTK_RESPONSE_CANCEL:
-	// User has aborted th econnection so need to tidy up here.
-	printf("GTK_RESPONSE_CANCEL:");
-	g_source_remove(RxWatchId);
-	//g_source_remove(TxWatchId);
-	//g_source_remove(ErWatchId);
-	g_io_channel_shutdown(E803_channel,FALSE,NULL);
-	g_io_channel_unref(E803_channel);
-	E803_channel = NULL;
-	break;
-    case GTK_RESPONSE_CLOSE:
-	printf("GTK_RESPONSE_CLOSE");
-	break;
-    case GTK_RESPONSE_YES:
-	printf("GTK_RESPONSE_YES");
-	break;
-    case GTK_RESPONSE_NO:
-	printf("GTK_RESPONSE_NO");
-	break;
-    case GTK_RESPONSE_APPLY:
-	printf("GTK_RESPONSE_APPLY");
-	break;
-    case GTK_RESPONSE_HELP:
-	printf("GTK_RESPONSE_HELP");
-	break;
-    default:
-	printf("Unrecognised Responce");
-	break;
-    }
-    printf("\n");
-
-   
-    
-    g_free(name);
-    gtk_widget_hide(makingConnectionDialog);
-    
-    
+    gtk_button_set_label(GTK_BUTTON(reconnectButton),"gtk-disconnect");
+    reconnectButtonState = TRUE;
+     
     return GDK_EVENT_PROPAGATE ;
 }
 
@@ -2226,18 +2176,9 @@ E803_messageHandler(GIOChannel *source,
     gsize length;
     GError *error = NULL;
     GIOStatus status;
-    static int PLTSstate = 0;
-
-    status = g_io_channel_read_chars(source,(gchar *)&message,1,&length,&error);
-    /*
-    printf("%s ",__FUNCTION__);
-    printGIOCondition(condition);
-    printGIOStatus(status);
-    printf("\n");
-    */
-    //printf("%s %d read %lu chars\n",__FUNCTION__,condition,length);
-
  
+    status = g_io_channel_read_chars(source,(gchar *)&message,1,&length,&error);
+  
     if(status != G_IO_STATUS_NORMAL)
     {
 	printf("Rx=%d Tx=%d Er=%d\n",RxWatchId,TxWatchId,ErWatchId);
@@ -2253,45 +2194,10 @@ E803_messageHandler(GIOChannel *source,
 	reconnectButtonState = FALSE;
 	gtk_window_set_title(GTK_WINDOW(mainWindow),"Disconnected");
 	return FALSE;
-
-
-
     }
-    else
-    {
-	//printf("RX:0x%02X\n",message & 0xFF);
-	if(waitingForPLTS)
-	{
-	    printf("PLTSstate = %d\n",PLTSstate);
-	    switch(PLTSstate)
-	    {
-	    case 0:
-		if(message == (guchar) 0xAA)
-		{
-		    PLTSstate = 1;
-		}
-		break;
-	    case 1:
-		if(message == (guchar) 0x55)
-		{
-		    PLTSstate = 2;
-		}
-		break;
-	    case 2:
- 		   PLTSstate = 0;
-		   waitingForPLTS = FALSE;
-		   gtk_dialog_response(GTK_DIALOG(makingConnectionDialog),GTK_RESPONSE_OK);
-		
-		break;
-	    }
-	}
-	else
-	{
-	    PLTSstate = 0;
-	    readPTSHandler(message);
-	}
-	//readPTSHandler(message);
-    }
+ 
+ 
+    readPTSHandler(message);
    
     return TRUE;
 }
@@ -2304,11 +2210,6 @@ E803_connectedHandler( __attribute__((unused)) GIOChannel *source,
 		       __attribute__((unused)) GIOCondition condition,
 		       __attribute__((unused)) gpointer data)
 {
-    printf("%s ",__FUNCTION__);
-    //printGIOCondition(condition);
-    printf("\n");
-
-     
 
     // When the connection is made, make it look like the user pressed the non-existent
     // "OK" button on the makingConnectionDialog.
@@ -2323,13 +2224,9 @@ E803_errorHandler( __attribute__((unused)) GIOChannel *source,
 		       __attribute__((unused)) GIOCondition condition,
 		       __attribute__((unused)) gpointer data)
 {
-    printf("%s ",__FUNCTION__);
-    //printGIOCondition(condition);
-    printf("\n");
-    printf("Rx=%d Tx=%d Er=%d\n",RxWatchId,TxWatchId,ErWatchId);
     g_source_remove(RxWatchId);
     g_source_remove(TxWatchId);
-    //g_source_remove(ErWatchId);
+
     
     g_io_channel_shutdown(source,FALSE,NULL);
     g_io_channel_unref(E803_channel);
@@ -2370,15 +2267,26 @@ on_networkConnectButton_clicked(__attribute__((unused)) GtkButton *button,
     int E803_socket,n,result;
     struct hostent *hp;
     struct sockaddr_in E803_server_name;
+    gboolean localHost = FALSE;
+
+    localHost = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(useLocalHost));
     
     address = g_string_new(NULL);
-    
-    g_string_printf(address,"%d.%d.%d.%d",
-		    (int)gtk_adjustment_get_value(ipAdjustments[0]),
-		    (int)gtk_adjustment_get_value(ipAdjustments[1]),
-		    (int)gtk_adjustment_get_value(ipAdjustments[2]),
-		    (int)gtk_adjustment_get_value(ipAdjustments[3]));
 
+    if(localHost)
+    {
+	g_string_printf(address,"localhost");
+    }
+    else
+    {
+	g_string_printf(address,"%d.%d.%d.%d",
+			(int)gtk_adjustment_get_value(ipAdjustments[0]),
+			(int)gtk_adjustment_get_value(ipAdjustments[1]),
+			(int)gtk_adjustment_get_value(ipAdjustments[2]),
+			(int)gtk_adjustment_get_value(ipAdjustments[3]));
+    }
+
+    printf("Address=%s\n",address->str);
     /* Create socket on which to send and recieve. */
     E803_socket = socket(AF_INET, SOCK_STREAM, 0); 
     if (E803_socket < 0) { 
@@ -2525,16 +2433,11 @@ void populateSerialList(GtkBuilder *builder)
     {
 	// Workout if there is real hardware for each device...
 
-
 	g_string_printf(fullpath,"/sys/class/tty/%s/device/subsystem",&globbuf.gl_pathv[n][5]);
 	realname  = realpath(fullpath->str,NULL);
 	base = g_path_get_basename(realname);
 
-
-	//printf("fullpath=%s realname=%s base=%s\n",fullpath->str,realname,base);
-	// REAL fullpath=/sys/class/tty/ttyS0/device/subsystem realname=/sys/bus/pnp base=pnp
-	// FAKE fullpath=/sys/class/tty/ttyS1/device/subsystem realname=/sys/bus/platform base=platform
-	
+	// If value is "platform" it is NOT a real interface.
 	if(strcmp(base,"platform") != 0)
 	{
 	    gtk_list_store_append (store, &iter);
@@ -2576,7 +2479,12 @@ textview {\
 
 int main(int argc,char **argv)
 {
-
+    struct passwd *pw;
+    uid_t uid;
+    gboolean createConfigDirectory = FALSE;
+    int  a1,a2,a3,a4;
+    gboolean addressOK = FALSE;
+    
     GtkBuilder *builder;
     GString *adjustmentName;
     int n;
@@ -2586,15 +2494,133 @@ int main(int argc,char **argv)
     GtkCssProvider *provider;
     GError *error;
 
-    GList *recent;
-    GtkRecentInfo *info;
+    //GList *recent;
     
     gtk_init (&argc, &argv);
 
+    // Install simple logging to stdout.
+    LoggingInit();
+    
+    /* Set global path to user's configuration and machine state files */
+    uid = getuid();
+    pw = getpwuid(uid);
+
+    configPath = g_string_new(pw->pw_dir);
+    configPath = g_string_append(configPath,"/.PLTS/");
+
+        // Now Check it exists.   If it is missing it is not an
+    // error as it may be the first time this user has run the emulator.
+    {
+	GFile *gf = NULL;
+	GFileType gft;
+	GFileInfo *gfi = NULL;
+	GError *error2 = NULL;
+	
+	gf = g_file_new_for_path(configPath->str);
+	gfi = g_file_query_info (gf,
+				 "standard::*",
+				 G_FILE_QUERY_INFO_NONE,
+				 NULL,
+				 &error2);
+
+	if(error2 != NULL)
+	{
+	    g_warning("Could not read user configuration directory: %s\n", error2->message);
+	    createConfigDirectory = TRUE;
+	}
+	else
+	{
+	
+	    gft = g_file_info_get_file_type(gfi);
+
+	    if(gft != G_FILE_TYPE_DIRECTORY)
+	    {
+		g_warning("User's configuration directory (%s) is missing.\n",configPath->str);
+		createConfigDirectory = TRUE;
+	    }
+	}
+	if(gfi) g_object_unref(gfi);
+	if(gf) g_object_unref(gf);
+
+    }
+
+    if(createConfigDirectory == TRUE)
+    {
+	GFile *gf;
+	GError *error2 = NULL;
+	
+	gf = g_file_new_for_path(configPath->str);
+	
+	g_file_make_directory (gf,
+                       NULL,
+                       &error2);
+
+	
+	if(error2 != NULL)
+	{
+	    g_error("Could not create  directory:%s\n", error2->message);
+	}
+
+	g_object_unref(gf);
+
+    }
+    else
+    {
+	GString *configFileName;
+	GIOChannel *file;
+
+	GIOStatus status;
+	gchar *message;
+	gsize length,term;
+
+	
+
+	configFileName = g_string_new(configPath->str);
+	g_string_append(configFileName,"DefaultIP");
+
+	if((file = g_io_channel_new_file(configFileName->str,"r",&error)) == NULL)
+	{
+	    g_warning("failed to open file %s due to %s\n",configFileName->str,error->message);
+	    
+	}
+	else
+	{
+	    while((status = g_io_channel_read_line(file,&message,&length,&term,&error)) 
+		  == G_IO_STATUS_NORMAL)
+	    {
+		if(message != NULL)
+		{
+		    g_info("read %s from congif file\n",message);
+
+		    if(sscanf(message,"%d.%d.%d.%d\n",&a1,&a2,&a3,&a4) == 4)
+		    {
+			g_info("Parsed as %d %d %d %d\n",a1,a2,a3,a4);
+			addressOK = TRUE;
+		    }
+		    else
+		    {
+			g_info("Failed to parse default address from %s\n",message);
+		    }
+	
+		    g_free(message);
+		}
+	    }
+	    g_io_channel_shutdown(file,FALSE,NULL);
+	    g_io_channel_unref(file);
+	}
+    }
+
+
+
+    
+
+
+   
+    
 
     recentManager = gtk_recent_manager_get_default ();
+/*
     recent = gtk_recent_manager_get_items(recentManager);
-
     while(recent != NULL)
     {
 	info = (GtkRecentInfo *) recent->data;
@@ -2604,7 +2630,7 @@ int main(int argc,char **argv)
 	       gtk_recent_info_last_application(info));
 	recent = g_list_next(recent);
     }
-
+*/
 
     builder = gtk_builder_new();
     gtk_builder_add_from_file(builder, "PLTS3.glade", NULL);
@@ -2622,6 +2648,15 @@ int main(int argc,char **argv)
 	ipAdjustments[n] = GTK_ADJUSTMENT(gtk_builder_get_object_checked (builder, adjustmentName->str));
     }
     g_string_free(adjustmentName,TRUE);
+
+    // Set address widgets to the default address.
+    if(addressOK)
+    {
+	gtk_adjustment_set_value(ipAdjustments[0],(gdouble)a1);
+	gtk_adjustment_set_value(ipAdjustments[1],(gdouble)a2);
+	gtk_adjustment_set_value(ipAdjustments[2],(gdouble)a3);
+	gtk_adjustment_set_value(ipAdjustments[3],(gdouble)a4);
+    }
 
     GETWIDGET(makingConnectionDialog,GTK_WIDGET);
     GETWIDGET(reconnectButton,GTK_WIDGET);
@@ -2660,6 +2695,7 @@ int main(int argc,char **argv)
     GETWIDGET(editorSaveButton,GTK_WIDGET);
     GETWIDGET(editorFrameLabel,GTK_WIDGET);
     GETWIDGET(editBinaryDialog,GTK_WIDGET);
+    GETWIDGET(useLocalHost,GTK_WIDGET);
 	       
     // Override textview style set by Raspberr Pi Desktop theme 
     display = gdk_display_get_default();
@@ -2674,17 +2710,10 @@ int main(int argc,char **argv)
     GETWIDGET(,GTK_WIDGET);
     */
     populateSerialList(builder);
-    
-
-
+ 
     gtk_builder_connect_signals (builder, NULL);
 
     gtk_widget_show (connectionWindow);
 
-    
-
-
     gtk_main ();
-    
-
 }

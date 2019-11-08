@@ -2,9 +2,7 @@ cmake_minimum_required(VERSION 2.8.0)
 
 PROJECT("803 Paperless Tape Station 3" C)
 
-ADD_EXECUTABLE(PLTS3 PLTS3.c)
-#ADD_EXECUTABLE(printTelecode printTelecode.c)
-#ADD_EXECUTABLE(diff diff.c)
+ADD_EXECUTABLE(PLTS3 PLTS3.c Logging.c)
 
 
 SET(CMAKE_C_FLAGS "-std=gnu99  -g  -Wall -Wextra -Wunused -Wconversion -Wundef -Wcast-qual -Wmissing-prototypes "
@@ -31,6 +29,5 @@ set(GLIBS ${GLIBS} ${GLIB_LIBRARIES})
 
 
 target_link_libraries(PLTS3 ${LIBS} )
-#target_link_libraries(printTelecode ${GLIBS} )
-#target_link_libraries(diff ${GLIBS} ) 
+
 
