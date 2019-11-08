@@ -1590,7 +1590,7 @@ on_editorOldButton_clicked(__attribute__((unused)) GtkButton *widget,
     gint ch;
     gsize length;
     gsize index;
-    //GError *error;
+    GError *error2;
     gboolean letters,figures,useUTF8,returnFlag;
     //GtkTextIter end;
     GString *utf8Filename = NULL;
@@ -1656,7 +1656,7 @@ on_editorOldButton_clicked(__attribute__((unused)) GtkButton *widget,
 
 	    {
 		GFile *gf;
-		GError *error2 = NULL;
+		error2 = NULL;
 		gf = g_file_new_for_path(fn);
 		gb = g_file_load_bytes(gf,NULL,NULL,&error2);
 		
@@ -1674,12 +1674,11 @@ on_editorOldButton_clicked(__attribute__((unused)) GtkButton *widget,
 	}
 	else
 	{
-       	    GError *error2 = NULL;
+       	    error2 = NULL;
 	    GBytes *gb;
 	    
 	    {
 		GFile *gf;
-		GError *error2 = NULL;
 		gf = g_file_new_for_path(filename);
 		gb = g_file_load_bytes(gf,NULL,NULL,&error2);
 
@@ -1896,7 +1895,7 @@ on_editorSaveButton_clicked(__attribute__((unused)) GtkButton *button,
     GtkTextIter start,end;
     guchar *utf8text;
     gint length;
-    gsize slength;
+    gsize slength,written;
     
     printf("%s called\n",__FUNCTION__);
 
@@ -1918,8 +1917,34 @@ on_editorSaveButton_clicked(__attribute__((unused)) GtkButton *button,
     slength = strlen((const char *)utf8text);
     printf("length=%d slength=%zu\n",length,slength);
 
+
+    {
+	GFile *gf;
+	GFileOutputStream *gfos;
+	//gboolean writeOk;
+
+	gf = g_file_new_for_path(utf8FileName->str);
+
+	gfos = g_file_replace (gf,
+			       NULL,
+			       TRUE,
+			       G_FILE_CREATE_NONE,
+			       NULL,
+			       &error);
+	
+	g_output_stream_write_all (G_OUTPUT_STREAM(gfos),
+					     (gchar *) utf8text,
+					     slength,
+					     &written,
+					     NULL,
+					     &error);
+
+	g_output_stream_close (G_OUTPUT_STREAM(gfos),NULL,&error);
+    }
+
+
     
-    g_file_set_contents (utf8FileName->str,(gchar *) utf8text,slength,&error);
+    //g_file_set_contents (utf8FileName->str,(gchar *) utf8text,slength,&error);
 
     g_string_free(utf8FileName,TRUE);
     g_free(utf8text);
@@ -1998,9 +2023,10 @@ printGIOStatus(GIOStatus status)
 static gboolean
 readPTSHandler(guchar rdChar)
 {
-    gchar writeChar,*cp;
-    gsize cnt,n;
-    gchar *buffer;
+    gchar writeChar;
+    //gchar *cp;
+    gsize cnt; //,n;
+    const gchar *buffer;
     GtkTextMark *mark;
     GtkTextIter enditer;
     int finished;
@@ -2166,9 +2192,9 @@ readPTSHandler(guchar rdChar)
 	    {
 		
 		//printf("Sending a block\n");
-		n = cnt;
-		cp = buffer;
-		while(n--) *cp++ &= 0x1F;
+		//n = cnt;
+		//cp = buffer;
+		//while(n--) *cp++ &= 0x1F;
 		
 		writeChar = '\x81';
 		g_io_channel_write_chars(E803_channel,&writeChar,1,&written,&error);
@@ -2179,9 +2205,9 @@ readPTSHandler(guchar rdChar)
 		g_io_channel_flush(E803_channel,NULL);
 		*downloadedp += cnt;
 
-		n = cnt;
-		cp = buffer;
-		while(n--) *cp++ |= '\x80';
+		//n = cnt;
+		//cp = buffer;
+		//while(n--) *cp++ |= '\x80';
 	    }
 	    else
 	    {
