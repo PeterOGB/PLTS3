@@ -93,8 +93,8 @@ GtkTextView *readerTextView;
 GtkTextBuffer *readerTextBuffer;
 gsize fileDownloadLength;
 gsize fileDownloaded;
-//gchar *fileDownloadBuffer;
-GBytes *fileDownloadBuffer;
+gchar *fileDownloadBuffer;
+//GBytes *fileDownloadBuffer;
 char *readerFileName = NULL;
 gsize *downloadLengthp;
 gsize *downloadedp;
@@ -420,13 +420,14 @@ gboolean on_reconnectButton_clicked(__attribute__((unused)) GtkButton *widget,
 }
 
 static gboolean
-isTelecodeTape(GBytes *buf, __attribute__((unused)) gsize len)
+isTelecodeTape(gchar *buf, gsize len)
 {
     gsize n;
     const gint8 *cp;
 
-    cp = g_bytes_get_data (buf,&n);
-
+    cp = (gint8 *) buf;
+    n = len;
+    
     // Check for any chars with -XX---- bits set as telecode
     // files will not have any ones there.
     while(n--)
@@ -437,7 +438,7 @@ isTelecodeTape(GBytes *buf, __attribute__((unused)) gsize len)
 }
 
 static gboolean
-isBinaryTape(GBytes *buf,gsize len)
+isBinaryTape(gchar *buf,gsize len)
 {
     gsize count;
     gint crCount,lfCount,crlfCount;
@@ -447,7 +448,7 @@ isBinaryTape(GBytes *buf,gsize len)
 
     printf("%s %p %ld\n",__FUNCTION__,buf,len);
     
-    cp = g_bytes_get_data(buf,&count);
+    cp = (gint8 *) buf;;
     
 
     
@@ -525,18 +526,22 @@ on_fileDownloadSetFileButton_clicked(__attribute__((unused)) GtkButton *button,
     }
     
     if(fileDownloadBuffer != NULL)
-	g_bytes_unref(fileDownloadBuffer);
-	//g_free(fileDownloadBuffer);
+	//g_bytes_unref(fileDownloadBuffer);
+	g_free(fileDownloadBuffer);
 
     {
 	GFile *gf;
 	gf = g_file_new_for_path(readerFileName);
-	fileDownloadBuffer = g_file_load_bytes(gf,
-			       NULL,NULL,&error);
+	
+	g_file_load_contents (gf,NULL,&fileDownloadBuffer,
+			      &fileDownloadLength,NULL,&error);
+
+	//fileDownloadBuffer = g_file_load_bytes(gf,
+	//		       NULL,NULL,&error);
 
 	//TODO Check error returned
 
-	fileDownloadLength = g_bytes_get_size(fileDownloadBuffer);
+	//fileDownloadLength = g_bytes_get_size(fileDownloadBuffer);
 	
 	g_object_unref(gf);
     }
@@ -556,7 +561,7 @@ on_fileDownloadSetFileButton_clicked(__attribute__((unused)) GtkButton *button,
     	res = gtk_dialog_run (GTK_DIALOG (notTelecodeDialog));
 	gtk_widget_hide(notTelecodeDialog);
 
-	g_bytes_unref(fileDownloadBuffer);
+	g_free(fileDownloadBuffer);
 	fileDownloadBuffer = NULL;
 	
 	return GDK_EVENT_PROPAGATE ;
@@ -564,7 +569,7 @@ on_fileDownloadSetFileButton_clicked(__attribute__((unused)) GtkButton *button,
 	
     printf("filename=%s\n",readerFileName);
     gtk_widget_set_sensitive(fileDownloadButton,TRUE);
-#if 0
+
     {
 	gsize n;
 	char *cp;
@@ -572,21 +577,22 @@ on_fileDownloadSetFileButton_clicked(__attribute__((unused)) GtkButton *button,
 	n = fileDownloadLength;
 	while(n--) *cp++ |= '\x80';
     }
-#endif
+#if 0
     {
-	GByteArray *gba;
+	//GByteArray *gba;
 	guint8 *cp;
 	guint n;
 	
-	gba = g_bytes_unref_to_array(fileDownloadBuffer);
-	cp = gba->data;
-	n = gba->len;
+
+	cp = fileDownloadBuffer; 
+	n = len;
 	while(n--) *cp++ &= '\x1F';
 
 	fileDownloadBuffer = 
 	    g_byte_array_free_to_bytes(gba);
 	
     }
+#endif
     // Update the tape image
     //gtk_widget_queue_draw(tapeImageDrawingArea);
 
@@ -726,19 +732,22 @@ on_fileDownloadChooseRecentFileButton_clicked(__attribute__((unused)) GtkButton 
     }
     
     if(fileDownloadBuffer != NULL)
-	g_bytes_unref(fileDownloadBuffer);
-    //g_free(fileDownloadBuffer);
+	//g_bytes_unref(fileDownloadBuffer);
+	g_free(fileDownloadBuffer);
 
 
     {
 	GFile *gf;
 	gf = g_file_new_for_path(readerFileName);
-	fileDownloadBuffer = g_file_load_bytes(gf,
-			       NULL,NULL,&error);
+//	fileDownloadBuffer = g_file_load_bytes(gf,
+//			       NULL,NULL,&error);
 
+	g_file_load_contents (gf,NULL,&fileDownloadBuffer,
+			      &fileDownloadLength,NULL,&error);
+	
 	//TODO Check error returned
 
-	fileDownloadLength = g_bytes_get_size(fileDownloadBuffer);
+//	fileDownloadLength = g_bytes_get_size(fileDownloadBuffer);
 	
 	g_object_unref(gf);
     }
@@ -759,8 +768,8 @@ on_fileDownloadChooseRecentFileButton_clicked(__attribute__((unused)) GtkButton 
     	res = gtk_dialog_run (GTK_DIALOG (notTelecodeDialog));
 	gtk_widget_hide(notTelecodeDialog);
 
-	//g_free(fileDownloadBuffer);
-	g_bytes_unref(fileDownloadBuffer);
+	g_free(fileDownloadBuffer);
+	//g_bytes_unref(fileDownloadBuffer);
 	fileDownloadBuffer = NULL;
 	
 	return GDK_EVENT_STOP ;
@@ -1640,7 +1649,7 @@ on_editorOldButton_clicked(__attribute__((unused)) GtkButton *widget,
 	if(useUTF8)
 	{
 	    char *fn;
-	    GBytes *gb;
+	    gchar *dataBuffer;
 	   
 	    
 	    if(utf8Filename != NULL)
@@ -1658,42 +1667,52 @@ on_editorOldButton_clicked(__attribute__((unused)) GtkButton *widget,
 		GFile *gf;
 		error2 = NULL;
 		gf = g_file_new_for_path(fn);
-		gb = g_file_load_bytes(gf,NULL,NULL,&error2);
+
+		g_file_load_contents (gf,NULL,&dataBuffer,
+			      &fileDownloadLength,NULL,&error);
+
+		
+//		gb = g_file_load_bytes(gf,NULL,NULL,&error2);
 		
 		//TODO Check error returned
 		
-		length = g_bytes_get_size(gb);
+//		length = g_bytes_get_size(gb);
 	
 		g_object_unref(gf);
 
-		text = g_bytes_get_data(gb,&length);
-		gtk_text_buffer_insert_at_cursor(editorTextBuffer,text,(gint) length);
+		//text = g_bytes_get_data(gb,&length);
+		gtk_text_buffer_insert_at_cursor(editorTextBuffer,dataBuffer,(gint) length);
 
-		g_bytes_unref(gb);
+		g_free(dataBuffer);
 	    }
 	}
 	else
 	{
        	    error2 = NULL;
-	    GBytes *gb;
+	    //GBytes *gb;
+	    gchar *dataBuffer;
 	    
 	    {
 		GFile *gf;
 		gf = g_file_new_for_path(filename);
-		gb = g_file_load_bytes(gf,NULL,NULL,&error2);
+
+		g_file_load_contents (gf,NULL,&dataBuffer,
+				      &fileDownloadLength,NULL,&error);
+		
+		//gb = g_file_load_bytes(gf,NULL,NULL,&error2);
 
 		//TODO Check error returned
 
-		fileDownloadLength = g_bytes_get_size(gb);
+		//fileDownloadLength = g_bytes_get_size(gb);
 	
 		g_object_unref(gf);
 
-		text = g_bytes_get_data(gb,&length);
+		//text = g_bytes_get_data(gb,&length);
 	    }
 	    
 	    //g_file_get_contents (filename,&text,&length,&error);
 
-	    if(!isTelecodeTape(gb,length))
+	    if(!isTelecodeTape(dataBuffer,length))
 	    {
 		res = gtk_dialog_run (GTK_DIALOG (notTelecodeDialog));
 		gtk_widget_hide(notTelecodeDialog);
@@ -1701,7 +1720,7 @@ on_editorOldButton_clicked(__attribute__((unused)) GtkButton *widget,
 		goto cleanUp;
 	    }
 
-	    if(isBinaryTape(gb,length))
+	    if(isBinaryTape(dataBuffer,length))
 	    {
 		res = gtk_dialog_run(GTK_DIALOG(editBinaryDialog));
 		gtk_widget_hide(editBinaryDialog);
@@ -1721,7 +1740,7 @@ on_editorOldButton_clicked(__attribute__((unused)) GtkButton *widget,
 	    for(index=0;index<length;index++)
 	    {
 		txt = NULL;
-		ch = text[index] & 0x1F;
+		ch = dataBuffer[index] & 0x1F;
 		if(ch >= 0x1B)
 		{
 		    switch(ch)
@@ -1761,7 +1780,8 @@ on_editorOldButton_clicked(__attribute__((unused)) GtkButton *widget,
 	    }
 	}
 cleanUp:
-	if(text) g_bytes_unref(fileDownloadBuffer);
+	if(dataBUffer) g_free(dataBuffer);
+	fileDownloadBuffer = NULL;
 	if(filename) g_free(filename);
 	if(utf8Filename) g_string_free(utf8Filename,TRUE);
 			 
