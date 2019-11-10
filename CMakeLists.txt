@@ -12,7 +12,9 @@ SET(CMAKE_C_FLAGS "-std=gnu99  -g  -Wall -Wextra -Wunused -Wconversion -Wundef -
 "-Wdisabled-optimization  -Wformat=2 -Winit-self"
 "-Wunused-parameter -Wlogical-op -Wuninitialized"
 "-Wnested-externs -Wpointer-arith -Wdouble-promotion -Wunused-macros"
-"-Wunsafe-loop-optimizations -rdynamic -fdiagnostics-color")
+"-Wunsafe-loop-optimizations -rdynamic")
+
+#  -fdiagnostics-color")
 
 STRING(REGEX REPLACE ";" " " CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
