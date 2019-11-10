@@ -238,6 +238,42 @@ on_setDefaultAddressButton_clicked(__attribute__((unused)) GtkButton *button,
 				 __attribute__((unused)) gpointer data);
 
 
+gboolean
+on_tapeImageDrawingArea_configure_event(__attribute__((unused)) GtkWidget *widget,
+					GdkEventConfigure  *event,
+					__attribute__((unused)) gpointer   user_data);
+
+gboolean
+on_tapeImageDrawingArea_draw(GtkWidget *da,
+			     cairo_t *cr,
+			     __attribute__((unused))gpointer udata);
+
+
+
+gboolean
+mouseMotionWhilePressed (__attribute__((unused)) GtkWidget      *tape,
+			 __attribute__((unused)) GdkEventMotion *event,
+			 __attribute__((unused)) gpointer        data);
+
+gboolean
+on_tapeImageDrawingArea_button_press_event(__attribute__((unused))GtkWidget *tape,
+					   __attribute__((unused))GdkEventButton *event,
+					   __attribute__((unused))gpointer data);
+
+gboolean
+on_tapeImageDrawingArea_button_release_event(__attribute__((unused))GtkWidget *tape,
+					     __attribute__((unused))GdkEventButton *event,
+					     __attribute__((unused))gpointer data);
+
+
+
+
+
+
+
+
+
+
 static gboolean
 notTelecode(GdkEventKey *event,gboolean Online);
 
@@ -542,7 +578,7 @@ on_fileDownloadSetFileButton_clicked(__attribute__((unused)) GtkButton *button,
     }
 #endif
     // Update the tape image
-    //gtk_widget_queue_draw(tapeImageDrawingArea);
+    gtk_widget_queue_draw(tapeImageDrawingArea);
 
     return GDK_EVENT_PROPAGATE ;
 }
@@ -693,6 +729,9 @@ on_fileDownloadChooseRecentFileButton_clicked(__attribute__((unused)) GtkButton 
 	
     printf("filename=%s\n",readerFileName);
     gtk_widget_set_sensitive(fileDownloadButton,TRUE);
+
+        // Update the tape image
+    gtk_widget_queue_draw(tapeImageDrawingArea);
     return GDK_EVENT_PROPAGATE ;
     
 }
@@ -1964,9 +2003,9 @@ struct GdkEventConfigure {
 };
 
 gboolean
-on_tapeImageDrawingArea_configure_event(GtkWidget *widget,
+on_tapeImageDrawingArea_configure_event(__attribute__((unused)) GtkWidget *widget,
 					GdkEventConfigure  *event,
-					gpointer   user_data)
+					__attribute__((unused)) gpointer   user_data)
 {
 
     int pos,w;
@@ -2076,9 +2115,9 @@ on_tapeImageDrawingArea_draw(GtkWidget *da,
 
 	
 	
-	if( (MIDPOINT + (fileDownloadLength*8) - Position) < MAXTODRAW)
+	if( (MIDPOINT + ((int)fileDownloadLength*8) - Position) < MAXTODRAW)
 	{
-	    toDraw -= MAXTODRAW - (MIDPOINT + (fileDownloadLength*8) - Position);
+	    toDraw -= MAXTODRAW - (MIDPOINT + ((int)fileDownloadLength*8) - Position);
 	}
 
 	// Creat whole rows of pixels at a time
@@ -2105,8 +2144,8 @@ on_tapeImageDrawingArea_draw(GtkWidget *da,
 
 	    if(phase != 0)
 	    {
-		
-		if(fileDownloadBuffer[characterNo] & bit)
+		// Force a sprocket hole
+		if((0x80 | fileDownloadBuffer[characterNo]) & bit)
 		{	
 		    if((row / 8) != 3)
 		    {
@@ -2150,7 +2189,7 @@ on_tapeImageDrawingArea_draw(GtkWidget *da,
 	    	    
 	    while(runLength--)
 	    {
-		if(fileDownloadBuffer[characterNo] & bit)
+		if((0x80 | fileDownloadBuffer[characterNo]) & bit)
 		{	
 		    maskSrcPointer = sourcePixels;
 		}
@@ -2175,7 +2214,7 @@ on_tapeImageDrawingArea_draw(GtkWidget *da,
 	    // get pixel pattern from data or sprocket hole image
 
 	
-	    if(fileDownloadBuffer[characterNo] & bit)
+	    if((0x80 | fileDownloadBuffer[characterNo]) & bit)
 	    {	
 		if((row / 8) != 3)
 		{
@@ -2253,7 +2292,7 @@ mouseMotionWhilePressed (__attribute__((unused)) GtkWidget      *tape,
     if(pos > (((signed) fileDownloadLength*8)+200) )
     {
 	printf("2");
-	tapeSlideX = -(handPosition) + (fileDownloadLength*8)+200;
+	tapeSlideX = -(handPosition) + ((int)fileDownloadLength*8)+200;
     }
 
     printf("\n");
