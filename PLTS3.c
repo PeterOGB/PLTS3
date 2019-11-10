@@ -1,6 +1,4 @@
 // Vesion 3: Add Serial / Network comms selection
-
-// TODO  Check for leaking GByteArray from convertToTelecode calls
 #define G_LOG_USE_STRUCTURED
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,7 +6,6 @@
 #include <unistd.h>
 #include <glob.h>
 #include <gtk/gtk.h>
-
 
 /* For network sockets */
 #include <sys/socket.h> 
@@ -22,11 +19,6 @@
 #include <pwd.h>
 
 #include "Logging.h"
-
-
-
-
-
 
 // Macro for geting widgets from the builder
 #define GETWIDGET(name,type) name=type(gtk_builder_get_object_checked (builder,#name))
@@ -77,7 +69,6 @@ gboolean punching = FALSE;
 gboolean ELLIOTTcode = TRUE;
 gboolean MURRYcode = FALSE;
 
-
 GtkTextView *teleprinterTextView;
 GtkTextBuffer *teleprinterTextBuffer;
 GtkWidget *windUpFromStartButton;
@@ -86,7 +77,6 @@ GtkWidget *discardTapeButton;
 GtkWidget *saveFileChooserDialog;
 GtkWidget *punchingToTapeButton;
 
-
 /*--------------------------- READER ----------------------------*/
 
 GtkTextView *readerTextView;
@@ -94,7 +84,6 @@ GtkTextBuffer *readerTextBuffer;
 gsize fileDownloadLength;
 gsize fileDownloaded;
 gchar *fileDownloadBuffer;
-//GBytes *fileDownloadBuffer;
 char *readerFileName = NULL;
 gsize *downloadLengthp;
 gsize *downloadedp;
@@ -102,8 +91,8 @@ const gchar *downloadBuffer;
 gboolean readerOnline = FALSE;
 int handPosition = 0;
 
-
 /*----------------------------- Editor -----------------------------*/
+
 gsize editorDownloadLength;
 gsize editorDownloaded;
 gchar *editorDownloadBuffer;
@@ -140,7 +129,6 @@ static const  gchar *convert3[] = {NULL,"3",NULL,"-"," ","'","8","7",NULL,NULL,"
 static GIOChannel *E803_channel = NULL;
 static guint RxWatchId=0,TxWatchId=0,ErWatchId=0;
 
-
 /******************* Prototypes for GTK event handlers **************************/
 
 static GObject *gtk_builder_get_object_checked(GtkBuilder *builder,const gchar *name);
@@ -163,18 +151,14 @@ gboolean
 on_fileDownloadButton_clicked(__attribute__((unused)) GtkButton *button,
 			      __attribute__((unused)) gpointer data);
 
-
 static gboolean
 E803_messageHandler(GIOChannel *source,
 		    __attribute__((unused)) GIOCondition condition,
 		    __attribute__((unused)) gpointer data);
 
-
-
 gboolean
 on_printToScreenButton_toggled( GtkToggleButton *button,
 				__attribute__((unused))gpointer data);
-
 
 gboolean
 on_punchingToTapeButton_toggled(GtkToggleButton *button,
@@ -284,6 +268,7 @@ on_noConnectionButton_clicked(__attribute__((unused)) GtkButton *widget,
     return GDK_EVENT_PROPAGATE ;
 }
 
+// Get address from spinners and save to file
 gboolean
 on_setDefaultAddressButton_clicked(__attribute__((unused)) GtkButton *button,
 				 __attribute__((unused)) gpointer data)
@@ -292,10 +277,6 @@ on_setDefaultAddressButton_clicked(__attribute__((unused)) GtkButton *button,
     	GString *configFileName;
 	GIOChannel *file;
 	GError *error = NULL;
-
-
-
-
 
     address = g_string_new(NULL);
     g_string_printf(address,"%d.%d.%d.%d\n",
@@ -312,16 +293,12 @@ on_setDefaultAddressButton_clicked(__attribute__((unused)) GtkButton *button,
     if((file = g_io_channel_new_file(configFileName->str,"w",&error)) == NULL)
     {
 	g_warning("failed to open file %s due to %s\n",configFileName->str,error->message);
-	
     }
     else
     {
 	g_io_channel_write_chars(file,address->str,-1,NULL,NULL);
-
 	g_io_channel_shutdown(file,TRUE,NULL);
 	g_io_channel_unref (file);
-
-
     }
     
     return GDK_EVENT_PROPAGATE ;
@@ -333,7 +310,7 @@ gboolean
 on_serialConnectButton_clicked(__attribute__((unused)) GtkButton *button,
 			       __attribute__((unused)) gpointer data)
 {
-    gint active;
+    //gint active;
     GtkTreeModel *model;
     GtkTreeIter iter;
     gchararray name;
@@ -342,16 +319,13 @@ on_serialConnectButton_clicked(__attribute__((unused)) GtkButton *button,
     struct termios newtio;
     int serial_fd;
 
-    active = gtk_combo_box_get_active(connectionCombobox);
+    // Get selected device fron combobox
+    //active = gtk_combo_box_get_active(connectionCombobox);
     model = gtk_combo_box_get_model(connectionCombobox);
-
    
     gtk_combo_box_get_active_iter(connectionCombobox,&iter);
 
     gtk_tree_model_get(model,&iter,0,&name,-1);
-       
-    printf("%s called %d  %s\n",__FUNCTION__,active,name);
-
 
     serial_fd = open(name,O_RDWR|O_NONBLOCK);
 
@@ -419,6 +393,7 @@ gboolean on_reconnectButton_clicked(__attribute__((unused)) GtkButton *widget,
     return GDK_EVENT_PROPAGATE ;
 }
 
+// Telecode=TRUE) utf8=FALSE
 static gboolean
 isTelecodeTape(gchar *buf, gsize len)
 {
@@ -442,15 +417,11 @@ isBinaryTape(gchar *buf,gsize len)
 {
     gsize count;
     gint crCount,lfCount,crlfCount;
-    gint diff1,diff2,diff3;
+    gint diff1; //,diff2,diff3;
     gchar this,prev;
     const gint8 *cp;
 
-    printf("%s %p %ld\n",__FUNCTION__,buf,len);
-    
     cp = (gint8 *) buf;;
-    
-
     
     count = len;
     crCount = lfCount = crlfCount = 0;
@@ -461,7 +432,6 @@ isBinaryTape(gchar *buf,gsize len)
 	prev = this;
 	this = *cp++ & 0x1F;
 	
-	//printf("%d %d %02X\n",count,index,this);
 	// Check for CR/LF sequences
 	if(this == 0x1D) crCount+= 1;
 	if(this == 0x1E) lfCount+= 1;
@@ -470,14 +440,9 @@ isBinaryTape(gchar *buf,gsize len)
 	    (prev == 0x1D) ) crlfCount+= 1;
     }
 
-    printf("isBinaryTape: %d %d %d\n",crCount,lfCount,crlfCount);
-
-
     diff1 = abs(crCount - lfCount);
-    diff2 = abs(crCount - crlfCount);
-    diff3 = abs(lfCount - crlfCount);
-    
-    printf("isBinaryTape: %d %d %d\n",diff1,diff2,diff3);
+    //diff2 = abs(crCount - crlfCount);
+    //diff3 = abs(lfCount - crlfCount);
 
     if(diff1 < 5)
 	return FALSE;
@@ -486,6 +451,11 @@ isBinaryTape(gchar *buf,gsize len)
 
 }
 
+static
+void mask5holes(gchar *data,gsize length)
+{
+    while(length--) *data++ &= 0x1F;
+}
 
 /*************** READER ********************/
 
@@ -495,11 +465,10 @@ on_fileDownloadSetFileButton_clicked(__attribute__((unused)) GtkButton *button,
 {
     //GtkWidget *dialog;
     gint res;
-    GError *error = NULL;
+    
 
     gtk_widget_set_sensitive(fileDownloadButton,FALSE);
-    
-    
+        
     res = gtk_dialog_run (GTK_DIALOG (loadFileChooserDialog));
     gtk_widget_hide(loadFileChooserDialog);
 
@@ -526,32 +495,26 @@ on_fileDownloadSetFileButton_clicked(__attribute__((unused)) GtkButton *button,
     }
     
     if(fileDownloadBuffer != NULL)
-	//g_bytes_unref(fileDownloadBuffer);
 	g_free(fileDownloadBuffer);
 
     {
 	GFile *gf;
+	GError *error = NULL;
+	
 	gf = g_file_new_for_path(readerFileName);
 	
 	g_file_load_contents (gf,NULL,&fileDownloadBuffer,
 			      &fileDownloadLength,NULL,&error);
-
-	//fileDownloadBuffer = g_file_load_bytes(gf,
-	//		       NULL,NULL,&error);
-
-	//TODO Check error returned
-
-	//fileDownloadLength = g_bytes_get_size(fileDownloadBuffer);
-	
+	mask5holes(fileDownloadBuffer,fileDownloadLength);
 	g_object_unref(gf);
     }
     
-    //g_file_get_contents (readerFileName,&fileDownloadBuffer,&fileDownloadLength,&error);
-
     if(fileDownloadLength > 65536)
     {
 	res = gtk_dialog_run (GTK_DIALOG (fileTooBigDialog));
 	gtk_widget_hide(fileTooBigDialog);
+	g_free(fileDownloadBuffer);
+	fileDownloadBuffer = NULL;
 	//gtk_widget_set_sensitive(fileDownloadButton,FALSE);
 	return GDK_EVENT_PROPAGATE ;
     }
@@ -569,28 +532,13 @@ on_fileDownloadSetFileButton_clicked(__attribute__((unused)) GtkButton *button,
 	
     printf("filename=%s\n",readerFileName);
     gtk_widget_set_sensitive(fileDownloadButton,TRUE);
-
+#if 0
     {
 	gsize n;
 	char *cp;
 	cp = fileDownloadBuffer;
 	n = fileDownloadLength;
 	while(n--) *cp++ |= '\x80';
-    }
-#if 0
-    {
-	//GByteArray *gba;
-	guint8 *cp;
-	guint n;
-	
-
-	cp = fileDownloadBuffer; 
-	n = len;
-	while(n--) *cp++ &= '\x1F';
-
-	fileDownloadBuffer = 
-	    g_byte_array_free_to_bytes(gba);
-	
     }
 #endif
     // Update the tape image
@@ -632,33 +580,17 @@ gboolean
 on_fileDownloadButton_clicked(__attribute__((unused)) GtkButton *button,
 				__attribute__((unused)) gpointer data)
 {
-    //GtkWidget *dialog;
-    //gint res;
-    
     gchar value[3];
-    //struct stat statBuf;
-    //int fd;
     GError *error = NULL;
     gsize written;
-//    gsize n;
-
-    printf("%s %s %d\n",__FUNCTION__,readerFileName,handPosition);
-
-
-    //g_free(readerDownloadBuffer);
-	  
-    //g_file_get_contents (readerFileName,&readerDownloadBuffer,&readerDownloadLength,&error);
 
     // Check if file is binary tape image file
 
     if(isBinaryTape(fileDownloadBuffer,fileDownloadLength))
     {
-	printf("BINARY \n");
+	g_info("BINARY TAPE\n");
 	gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(readerEchoButton),FALSE);
     }
-
-    // Now done when file loaded
-    //for(n=0;n<fileDownloadLength;n++) fileDownloadBuffer[n] &= 0x1F;
 
     value[0] = '\x80';
     value[1] = '\x00';
@@ -672,20 +604,10 @@ on_fileDownloadButton_clicked(__attribute__((unused)) GtkButton *button,
     printf("file size = %jd \n",(__intmax_t)fileDownloadLength);
     fileDownloaded = 0;
 
-    /*
     downloadLengthp = &fileDownloadLength;
     downloadedp = &fileDownloaded;
     downloadBuffer = fileDownloadBuffer;
-    */
 
-    //fileDownloadLength -= (gsize) (handPosition/8);
-    downloadLengthp = &fileDownloadLength;
-    downloadedp = &fileDownloaded;
-    //downloadBuffer = fileDownloadBuffer;
-
-    downloadBuffer = g_bytes_get_data(fileDownloadBuffer,
-				      &fileDownloadLength);
-    
     // Save button states
     fileDownloadWasSensitive   = gtk_widget_get_sensitive(fileDownloadButton);
     editorDownloadWasSensitive = gtk_widget_get_sensitive(editorDownloadButton);
@@ -701,7 +623,7 @@ on_fileDownloadChooseRecentFileButton_clicked(__attribute__((unused)) GtkButton 
 			       __attribute__((unused))gpointer data)
 {
     gint res;
-    GError *error = NULL;
+    
 
     res = gtk_dialog_run (GTK_DIALOG (openRecentFileChooserDialog));
     gtk_widget_hide(openRecentFileChooserDialog);
@@ -732,34 +654,31 @@ on_fileDownloadChooseRecentFileButton_clicked(__attribute__((unused)) GtkButton 
     }
     
     if(fileDownloadBuffer != NULL)
-	//g_bytes_unref(fileDownloadBuffer);
 	g_free(fileDownloadBuffer);
 
 
     {
 	GFile *gf;
+	GError *error = NULL;
+	
 	gf = g_file_new_for_path(readerFileName);
-//	fileDownloadBuffer = g_file_load_bytes(gf,
-//			       NULL,NULL,&error);
 
 	g_file_load_contents (gf,NULL,&fileDownloadBuffer,
 			      &fileDownloadLength,NULL,&error);
+	mask5holes(fileDownloadBuffer,fileDownloadLength);
 	
 	//TODO Check error returned
 
-//	fileDownloadLength = g_bytes_get_size(fileDownloadBuffer);
-	
 	g_object_unref(gf);
     }
-
-    
-    //g_file_get_contents (readerFileName,&fileDownloadBuffer,&fileDownloadLength,&error);
 
     if(fileDownloadLength > 65536)
     {
 	res = gtk_dialog_run (GTK_DIALOG (fileTooBigDialog));
 	gtk_widget_hide(fileTooBigDialog);
 	//gtk_widget_set_sensitive(fileDownloadButton,FALSE);
+	g_free(fileDownloadBuffer);
+	fileDownloadBuffer = NULL;
 	return GDK_EVENT_STOP ;
     }
 	    
@@ -767,11 +686,8 @@ on_fileDownloadChooseRecentFileButton_clicked(__attribute__((unused)) GtkButton 
     {
     	res = gtk_dialog_run (GTK_DIALOG (notTelecodeDialog));
 	gtk_widget_hide(notTelecodeDialog);
-
 	g_free(fileDownloadBuffer);
-	//g_bytes_unref(fileDownloadBuffer);
 	fileDownloadBuffer = NULL;
-	
 	return GDK_EVENT_STOP ;
     }
 	
@@ -882,21 +798,9 @@ on_readerTextView_key_press_event(__attribute__((unused))GtkWidget *widget,
 	}
 	if(forceShift && (telecode < 64))
 	{
-	    /*
-	    gchar shift;
-	    shift = 0x5B + ((telecode >> 3) & 0x4);
-	    value[0] = 0x8A;
-	    value[1] = shift;
-	    printf("%s telecode = 0x%2X\n",__FUNCTION__,telecode & 0xFF);
-
-	    g_io_channel_write_chars(E803_channel,value,2,&written,&error);
-	    if(error != NULL) printf("ERROR !=NULL %s %d\n",__FUNCTION__,__LINE__);
-	    g_io_channel_flush(E803_channel,NULL);
-	    */
 	    telecode += 0x80;
 	    forceShift = FALSE;
 	}
-	    
 	    
        	value[0] = '\x8A';
 	value[1] = (gchar) (telecode & 0xFF);
@@ -906,11 +810,7 @@ on_readerTextView_key_press_event(__attribute__((unused))GtkWidget *widget,
 	if(error != NULL) printf("ERROR !=NULL %s %d\n",__FUNCTION__,__LINE__);
 	g_io_channel_flush(E803_channel,NULL);
 
-
 	return GDK_EVENT_STOP;
-
-	
-
     }
     else
     {
@@ -941,15 +841,13 @@ on_printToScreenButton_toggled( GtkToggleButton *button,
 {
   gboolean set;
 
-
-
   set = gtk_toggle_button_get_active(button);
   if(set) 
      printing = TRUE;
   else
     printing = FALSE;
 
-  printf("printing is %s\n",printing?"True":"False");
+  g_info("printing is %s\n",printing?"True":"False");
 
   return GDK_EVENT_PROPAGATE ;
 
@@ -959,10 +857,7 @@ gboolean
 on_punchingToTapeButton_toggled(GtkToggleButton *button,
 			     __attribute__((unused)) gpointer data)
 {
-
   gboolean set;
-
-
 
   set = gtk_toggle_button_get_active(button);
   if(set)
@@ -980,7 +875,7 @@ on_punchingToTapeButton_toggled(GtkToggleButton *button,
   else
       punching = FALSE;
 
-  printf("punching is %s\n",punching?"True":"False");
+  g_info("punching is %s\n",punching?"True":"False");
 
   return GDK_EVENT_PROPAGATE ;
 }
@@ -990,7 +885,7 @@ saveBuffer(GByteArray *buffer)
 {
     gint res;
     
-    GError *error = NULL;
+    
 
     res = gtk_dialog_run (GTK_DIALOG (saveFileChooserDialog));
 
@@ -1001,10 +896,30 @@ saveBuffer(GByteArray *buffer)
 	gchar *punchFileName;
 	punchFileName = gtk_file_chooser_get_filename (GTK_FILE_CHOOSER (saveFileChooserDialog));
 
-	error = NULL;
-	
-	g_file_set_contents (punchFileName,(gchar *) buffer->data,buffer->len,&error);
+	{
+	    GFile *gf;
+	    GError *error = NULL;
+	    //GFileOutputStream *gfos;
+	    
+	    //gboolean writeOk;
+	    
+	    gf = g_file_new_for_path(punchFileName);
 
+
+	    g_file_replace_contents (gf,
+				     (char *) buffer->data,
+				     buffer->len,
+				     NULL,
+				     FALSE,
+				     G_FILE_CREATE_NONE,
+				     NULL,
+				     NULL,
+				     &error);
+
+	    g_object_unref(gf);
+	    
+	}	
+	
 	g_free(punchFileName);
 	return TRUE;
     }
@@ -1132,11 +1047,6 @@ on_useMurryCodeButton_toggled(__attribute__((unused)) GtkButton *button,
 
 /*********************************** EDITOR ********************************/
 
-/* These tables use strings rather than single characters inorder to easily
-   handle the two byte utf-8 code used for £ .
-*/
-
-
 
 /* GDK_KEY codes for the non-letter and non-digit characters in Elliott Telecode */
 guint telecodeKeysElliott[16] = {GDK_KEY_asterisk,GDK_KEY_dollar,GDK_KEY_equal,GDK_KEY_apostrophe,
@@ -1255,7 +1165,8 @@ convertToTelecode(gboolean fromCursorFlag)
     GtkTextIter start,end;
     guchar *utf8text,*cp;    // Made uchar otherwise utf8 code didn't work
 /*
-/home/petero/ELLIOTT-803/803-PLTS-2/PLTS2.c:684:9: warning: comparison is always true due to limited range of data type [-Wtype-limits]
+/home/petero/ELLIOTT-803/803-PLTS-2/PLTS2.c:684:9: warning: comparison is 
+always true due to limited range of data type [-Wtype-limits]
   if(*cp < 0x80)
 
  */    
@@ -1296,6 +1207,7 @@ convertToTelecode(gboolean fromCursorFlag)
     // For downloads into the reader directly extra runnouts won't matter.
     g_byte_array_append(telecode,runouts,16);
 
+    // skipping is set when a # is read and is reset at the end of the line
     skipping = FALSE;
     
     cp = utf8text;
@@ -1305,11 +1217,9 @@ convertToTelecode(gboolean fromCursorFlag)
 	{
 	    utf8char[0] = *cp;
 	    utf8char[1] = 0x00;
-	    //printf("UTF8=(0x%2X) ",*cp);
 	}
 	else
 	{
-	    //printf("UTF8=(0x%02X %02X) ",*cp,*(cp+1));
 	    utf8char[0] = *cp++;
 	    utf8char[1] = *cp;
 	    utf8char[2] = 0x00;
@@ -1318,9 +1228,7 @@ convertToTelecode(gboolean fromCursorFlag)
 	if(!skipping)
 	{
 	    if(strcmp((gchar *) utf8char,"#") == 0)
-	    {
-		
-		printf("skipping TRUE\n");
+	    {		
 		skipping = TRUE;
 		cp++;
 
@@ -1350,7 +1258,6 @@ convertToTelecode(gboolean fromCursorFlag)
 	{
 	    if(strcmp((gchar *) utf8char,"\n") == 0)
 	    {
-		printf("skipping FALSE\n");
 		skipping = FALSE;
 		if(ignoreLF)
 		{
@@ -1364,9 +1271,6 @@ convertToTelecode(gboolean fromCursorFlag)
 		continue;
 	    }
 	}
-
-
-	
 	
 	for(n=0;n<64;n++)
 	{
@@ -1398,7 +1302,6 @@ convertToTelecode(gboolean fromCursorFlag)
 			figures = FALSE;
 		    }
 		    g_byte_array_append(telecode,&m,1);
-		    printf("%02X ",n & 0x1F);
 		    count++;
 		}
 		else if((n > 0) && (n < 32))
@@ -1413,7 +1316,6 @@ convertToTelecode(gboolean fromCursorFlag)
 			figures = TRUE;
 		    }
 		    g_byte_array_append(telecode,&m,1);
-		    printf("%02X ",n & 0x1F);
 		    count++;
 		}
 		break;
@@ -1424,7 +1326,7 @@ convertToTelecode(gboolean fromCursorFlag)
 
     g_byte_array_append(telecode,runouts,16);
     
-    printf("\nConverted %d to %d (%d) characters\n",length,count,telecode->len);
+    g_info("\nConverted %d to %d (%d) characters\n",length,count,telecode->len);
 
     return telecode;
 }
@@ -1435,13 +1337,9 @@ convertToTelecode(gboolean fromCursorFlag)
 gboolean on_editorTextView_key_press_event(__attribute__((unused))GtkWidget *widget,
 					   GdkEventKey *event)
 {
-    //int n;
     gboolean ignore;
 
-    //printf("keyval=%x\n",event->keyval);
-
     ignore = notTelecode(event,FALSE);
-    //telecode = 0xFF;
 
     // Convert a-z into A-Z
     if((event->keyval >= GDK_KEY_a) && (event->keyval <= GDK_KEY_z))
@@ -1453,7 +1351,7 @@ gboolean on_editorTextView_key_press_event(__attribute__((unused))GtkWidget *wid
 	    buffer = gtk_text_view_get_buffer (GTK_TEXT_VIEW (widget));
 	    gtk_text_buffer_insert_at_cursor (buffer,&upper, 1);
                 
-	    return GDK_EVENT_STOP;    /* return TRUE - no further processing */
+	    return GDK_EVENT_STOP;
 	}
     }
     return ignore;
@@ -1478,8 +1376,6 @@ gboolean on_editorTextView_key_press_event(__attribute__((unused))GtkWidget *wid
 	    {
 		telecode = 1+ event->keyval - GDK_KEY_a;
 		telecode += 32;
-
-
 	    }
 	    else
 	    {
@@ -1491,7 +1387,6 @@ gboolean on_editorTextView_key_press_event(__attribute__((unused))GtkWidget *wid
 			telecode = n;
 			if(n >= 27) telecode += 64;
 		    }
-	    
 	    }
 	}
 
@@ -1539,7 +1434,6 @@ gboolean on_editorTextView_key_press_event(__attribute__((unused))GtkWidget *wid
 	return GDK_EVENT_STOP;
     }
     else
-
     {
 	// Convert a-z into A-Z
 	if((event->keyval >= GDK_KEY_a) && (event->keyval <= GDK_KEY_z))
@@ -1592,22 +1486,21 @@ gboolean
 on_editorOldButton_clicked(__attribute__((unused)) GtkButton *widget,
 			   __attribute__((unused))gpointer data)
 {
-    //GtkDialog *dialog;
     gint res;
-    const gchar *text;
+    //const gchar *text;
     const gchar *txt;
     gint ch;
     gsize length;
     gsize index;
-    GError *error2;
+    //GError *error2;
     gboolean letters,figures,useUTF8,returnFlag;
-    //GtkTextIter end;
     GString *utf8Filename = NULL;
     char *filename;
+    gchar *dataBuffer = NULL;;
     
     printf("%s called\n",__FUNCTION__);
 
-    text = NULL;
+    //text = NULL;
     useUTF8 = FALSE;
     returnFlag = GDK_EVENT_PROPAGATE;
     
@@ -1649,7 +1542,7 @@ on_editorOldButton_clicked(__attribute__((unused)) GtkButton *widget,
 	if(useUTF8)
 	{
 	    char *fn;
-	    gchar *dataBuffer;
+	    
 	   
 	    
 	    if(utf8Filename != NULL)
@@ -1665,52 +1558,37 @@ on_editorOldButton_clicked(__attribute__((unused)) GtkButton *widget,
 
 	    {
 		GFile *gf;
-		error2 = NULL;
+		GError *error = NULL; 
+
 		gf = g_file_new_for_path(fn);
 
 		g_file_load_contents (gf,NULL,&dataBuffer,
-			      &fileDownloadLength,NULL,&error);
+			      &length,NULL,&error);
 
 		
-//		gb = g_file_load_bytes(gf,NULL,NULL,&error2);
-		
-		//TODO Check error returned
-		
-//		length = g_bytes_get_size(gb);
-	
 		g_object_unref(gf);
-
-		//text = g_bytes_get_data(gb,&length);
 		gtk_text_buffer_insert_at_cursor(editorTextBuffer,dataBuffer,(gint) length);
-
 		g_free(dataBuffer);
+		dataBuffer = NULL;
+		
 	    }
 	}
 	else
 	{
-       	    error2 = NULL;
-	    //GBytes *gb;
-	    gchar *dataBuffer;
-	    
 	    {
 		GFile *gf;
+		GError *error = NULL;
 		gf = g_file_new_for_path(filename);
 
 		g_file_load_contents (gf,NULL,&dataBuffer,
 				      &fileDownloadLength,NULL,&error);
-		
-		//gb = g_file_load_bytes(gf,NULL,NULL,&error2);
-
+		mask5holes(fileDownloadBuffer,fileDownloadLength);
 		//TODO Check error returned
 
-		//fileDownloadLength = g_bytes_get_size(gb);
-	
 		g_object_unref(gf);
-
-		//text = g_bytes_get_data(gb,&length);
 	    }
 	    
-	    //g_file_get_contents (filename,&text,&length,&error);
+
 
 	    if(!isTelecodeTape(dataBuffer,length))
 	    {
@@ -1780,7 +1658,7 @@ on_editorOldButton_clicked(__attribute__((unused)) GtkButton *widget,
 	    }
 	}
 cleanUp:
-	if(dataBUffer) g_free(dataBuffer);
+	if(dataBuffer) g_free(dataBuffer);
 	fileDownloadBuffer = NULL;
 	if(filename) g_free(filename);
 	if(utf8Filename) g_string_free(utf8Filename,TRUE);
@@ -1910,18 +1788,42 @@ on_editorSaveButton_clicked(__attribute__((unused)) GtkButton *button,
 			    __attribute__((unused))gpointer data)
 {
     GByteArray *telecode;
-    GError *error = NULL;
+    //GError *error = NULL;
     GString *utf8FileName;
     GtkTextIter start,end;
     guchar *utf8text;
     gint length;
-    gsize slength,written;
+    gsize slength; //,written;
     
     printf("%s called\n",__FUNCTION__);
 
     telecode = convertToTelecode(FALSE);
 
-    g_file_set_contents (editorFileName,(gchar *) telecode->data,telecode->len,&error);
+    //g_file_set_contents (editorFileName,(gchar *) telecode->data,telecode->len,&error);
+
+    {
+	GFile *gf;
+	GError *error = NULL;
+	//GFileOutputStream *gfos;
+	    
+	//gboolean writeOk;
+	    
+	gf = g_file_new_for_path(editorFileName);
+
+
+	g_file_replace_contents (gf,
+				 (char *)telecode->data,
+				 telecode->len,
+				 NULL,
+				 FALSE,
+				 G_FILE_CREATE_NONE,
+				 NULL,
+				 NULL,
+				 &error);
+
+	g_object_unref(gf);
+	    
+    }	
 
     g_byte_array_free(telecode,TRUE);
 
@@ -1938,6 +1840,31 @@ on_editorSaveButton_clicked(__attribute__((unused)) GtkButton *button,
     printf("length=%d slength=%zu\n",length,slength);
 
 
+    {
+	GFile *gf;
+	GError *error = NULL;
+	//GFileOutputStream *gfos;
+	    
+	//gboolean writeOk;
+	    
+	gf = g_file_new_for_path(utf8FileName->str);
+
+
+	g_file_replace_contents (gf,
+				 (gchar *) utf8text,
+				 slength,
+				 NULL,
+				 FALSE,
+				 G_FILE_CREATE_NONE,
+				 NULL,
+				 NULL,
+				 &error);
+
+	g_object_unref(gf);
+	    
+    }	
+
+#if 0    
     {
 	GFile *gf;
 	GFileOutputStream *gfos;
@@ -1960,8 +1887,10 @@ on_editorSaveButton_clicked(__attribute__((unused)) GtkButton *button,
 					     &error);
 
 	g_output_stream_close (G_OUTPUT_STREAM(gfos),NULL,&error);
+	g_object_unref(gfos);
+	g_object_unref(gf);
     }
-
+#endif
 
     
     //g_file_set_contents (utf8FileName->str,(gchar *) utf8text,slength,&error);
