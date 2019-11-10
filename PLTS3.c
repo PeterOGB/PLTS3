@@ -1902,6 +1902,418 @@ on_editorSaveButton_clicked(__attribute__((unused)) GtkButton *button,
 }
 
 
+/* Tape Drawing Area */
+
+#define HOLEWIDTH 8
+uint8_t rowToBit[6] = {0x01,0x02,0x04,0x80,0x08,0x10};
+static uint8_t hole[8][8] =
+{{0xFF,0xFF,0xFF,0xEF,0xEF,0xFF,0xFF,0xFF},
+ {0xFF,0xDF,0x9F,0x70,0x70,0x9F,0xDF,0xFF},
+ {0xFF,0x9F,0x20,0x00,0x00,0x20,0x9F,0xFF},
+ {0xEF,0x70,0x00,0x00,0x00,0x00,0x70,0xEF},
+ {0xEF,0x70,0x00,0x00,0x00,0x00,0x70,0xEF},
+ {0xFF,0x9F,0x20,0x00,0x00,0x20,0x9F,0xFF},
+ {0xFF,0xDF,0x9F,0x70,0x70,0x9F,0xDF,0xFF},
+ {0xFF,0xFF,0xFF,0xEF,0xEF,0xFF,0xFF,0xFF}};
+
+static uint8_t sprocket[8][8] =
+{{0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},
+ {0xFF,0xFF,0xFF,0xEF,0xEF,0xFF,0xFF,0xFF},
+ {0xFF,0xFF,0xCF,0x80,0x80,0xCF,0xFF,0xFF},
+ {0xFF,0xEF,0x80,0x10,0x10,0x80,0xEF,0xFF},
+ {0xFF,0xEF,0x80,0x10,0x10,0x80,0xEF,0xFF},
+ {0xFF,0xFF,0xCF,0x80,0x80,0xCF,0xFF,0xFF},
+ {0xFF,0xFF,0xFF,0xEF,0xEF,0xFF,0xFF,0xFF},
+ {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}};
+
+uint8_t noHole[8][8] =
+{{0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},
+ {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},
+ {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},
+ {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},
+ {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},
+ {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},
+ {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},
+ {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}};
+
+GdkRGBA tapeColours[5] = {
+    {0.8,0.68,0.68,1.0},
+    {0.1,0.1,0.5,1.0},
+    {0.56,0.56,1.0,1.0},
+    {0.9,0.9,0.9,1.0},
+    {0.31,0.84,0.42,1.0}
+};
+
+
+int tapeSlideX = 0;
+int mousePressedAtX = 0;
+int tapeWindowWidth = 0;
+
+gulong mouseMotionWhilePressedHandlerId = 0;
+gboolean motionDetected = FALSE;
+gboolean resized = FALSE;
+
+
+struct GdkEventConfigure {
+  GdkEventType type;
+  GdkWindow *window;
+  gint8 send_event;
+  gint x, y;
+  gint width;
+  gint height;
+};
+
+gboolean
+on_tapeImageDrawingArea_configure_event(GtkWidget *widget,
+					GdkEventConfigure  *event,
+					gpointer   user_data)
+{
+
+    int pos,w;
+    printf("%s called %d %d \n",__FUNCTION__,event->width,event->height);
+    tapeWindowWidth = event->width;
+    resized = TRUE;
+
+
+    pos = handPosition + tapeSlideX;
+
+
+    printf("%s called %d %d %d ",__FUNCTION__,tapeSlideX,handPosition,pos);
+
+    w = (tapeWindowWidth / 2) - 75;
+    
+    if(pos < -w)
+    {
+	printf("1");
+	tapeSlideX = -w - handPosition ;
+    }
+
+
+
+
+    
+    return FALSE;
+}
+
+
+gboolean
+on_tapeImageDrawingArea_draw(GtkWidget *da,
+		    cairo_t *cr,
+		    __attribute__((unused))gpointer udata)
+    
+{
+    static cairo_surface_t *surface = NULL;
+    static uint8_t *maskBytes;
+    static int stride;
+    uint8_t *maskPointer,bit;
+    uint8_t *maskSrcPointer,*sourcePixels;
+    int toDraw;
+    static unsigned int maskSize;
+
+    static int MAXTODRAW,MIDPOINT;  // Measured in pixels
+    int index,firstPixel;
+    int Position,phase,firstChar,characterNo,nn,runLength;
+    
+
+
+    //printf("%s called \n",__FUNCTION__);
+
+    if((surface != NULL) && resized)
+    {
+	cairo_surface_destroy(surface);
+	surface = NULL;
+    }
+    
+    if(surface == NULL)
+    {
+	GtkAllocation  alloc;
+	gtk_widget_get_allocation(da, &alloc);
+	printf("Hand widget size is currently %dx%d\n",alloc.width, alloc.height);
+
+	surface = cairo_image_surface_create(CAIRO_FORMAT_A8,
+					     alloc.width,alloc.height);
+	maskBytes = cairo_image_surface_get_data(surface);
+	stride = cairo_image_surface_get_stride(surface);
+	maskSize = (unsigned int) (stride * alloc.height);
+	MAXTODRAW = alloc.width - 2;
+	MIDPOINT = MAXTODRAW / 2;
+	MIDPOINT -= MIDPOINT & 7;
+	printf("surface=%p maskBytes=%p stride=%d\n",surface,maskBytes,stride);
+    }
+    memset(maskBytes,0x00,maskSize);
+    cairo_set_source_rgba(cr,0.3,0.3,0.3,1.0);
+    
+    cairo_paint(cr);
+    index = 0;
+   
+    if(fileDownloadBuffer != NULL)
+    {
+
+
+	// Need to double "position" because there are 8 micro-steps
+	// on the Hand drawing not the normal 4
+	//Position = (2 * tapeInHand->handPosition) + tapeSlideX;
+	Position = handPosition + tapeSlideX;
+	printf("%s %d\n",__FUNCTION__,Position);
+	
+	toDraw = MAXTODRAW;
+
+	// Deal with leading edge of tape
+	if(Position <= MIDPOINT)
+	{   // Leading edge is visible
+	    firstPixel = MIDPOINT - Position;
+	    toDraw -= firstPixel; 
+		
+	    phase = 0;
+	    firstChar = 0;
+	}
+	else
+	{   // Leading edge is off screen left
+	    firstPixel = 0;
+	    phase = Position % 8;
+	    firstChar = (Position - MIDPOINT) / 8;
+	}
+
+	
+	
+	if( (MIDPOINT + (fileDownloadLength*8) - Position) < MAXTODRAW)
+	{
+	    toDraw -= MAXTODRAW - (MIDPOINT + (fileDownloadLength*8) - Position);
+	}
+
+	// Creat whole rows of pixels at a time
+	for(int row = 0; row < (6 * HOLEWIDTH); row++)
+	{
+
+	    if((row & 7) == 0)
+	    {
+		index = 0;   // Reset to start of hole image
+	    }
+
+	  
+
+	    // guard to stop segfaults !
+	    if(toDraw < 1) goto skip;
+
+	    bit = rowToBit[row / 8];
+	    characterNo = (int) firstChar;
+	    /* Point at first pixel in the row */
+	    maskPointer = &maskBytes[(int)row * stride];
+	    maskPointer += firstPixel;
+
+	    runLength = toDraw;
+
+	    if(phase != 0)
+	    {
+		
+		if(fileDownloadBuffer[characterNo] & bit)
+		{	
+		    if((row / 8) != 3)
+		    {
+			maskSrcPointer = &hole[index][phase];
+		    }
+		    else
+		    {
+			maskSrcPointer = &sprocket[index][phase];
+		    }  
+		}
+		else
+		{
+		    maskSrcPointer = &noHole[index][phase];
+		}
+
+
+		nn = 8 - (int) phase;
+		runLength -= nn;
+		while(nn--)
+		    *maskPointer++ =  *maskSrcPointer++;
+
+		characterNo += 1;
+	    }
+
+
+
+	    // get pixel pattern from data or sprocket hole image
+	    if((row / 8) != 3)
+	    {
+		sourcePixels  = &hole[index][0];
+	    }
+	    else
+	    {
+		sourcePixels  = &sprocket[index][0];
+	    }
+
+	    nn = runLength & 7;
+
+	    // Draw groups of 8 pixels.  Could use a uint64_t pointer ?
+	    runLength >>= 3;
+	    	    
+	    while(runLength--)
+	    {
+		if(fileDownloadBuffer[characterNo] & bit)
+		{	
+		    maskSrcPointer = sourcePixels;
+		}
+		else
+		{
+		    maskSrcPointer = &noHole[index][0];
+		}
+		
+		*maskPointer++ = *maskSrcPointer++;
+		*maskPointer++ = *maskSrcPointer++;
+		*maskPointer++ = *maskSrcPointer++;
+		*maskPointer++ = *maskSrcPointer++;
+		*maskPointer++ = *maskSrcPointer++;
+		*maskPointer++ = *maskSrcPointer++;
+		*maskPointer++ = *maskSrcPointer++;
+		*maskPointer++ = *maskSrcPointer++;
+
+		characterNo += 1;
+	    }
+
+
+	    // get pixel pattern from data or sprocket hole image
+
+	
+	    if(fileDownloadBuffer[characterNo] & bit)
+	    {	
+		if((row / 8) != 3)
+		{
+		    maskSrcPointer = &hole[index][0];
+		}
+		else
+		{
+		    maskSrcPointer = &sprocket[index][0];
+		}
+	    }
+	    else
+	    {
+		maskSrcPointer = &noHole[index][0];
+	    }
+	
+	    while(nn--)
+		*maskPointer++ = *maskSrcPointer++;
+skip:
+
+
+	    index += 1;
+	}
+
+	
+    }
+    else
+    {
+	// Clear the mask to all transparent if no tape in hand
+	memset(maskBytes,0x00,(unsigned)stride*48);
+    }
+
+
+    // Now do the drawing
+    cairo_surface_mark_dirty(surface);
+    if(fileDownloadBuffer != NULL) gdk_cairo_set_source_rgba(cr,&tapeColours[3]);
+    cairo_mask_surface(cr, surface, 0, 0);
+    cairo_fill(cr);
+  
+    return FALSE;
+}
+
+
+
+gboolean
+mouseMotionWhilePressed (__attribute__((unused)) GtkWidget      *tape,
+			 __attribute__((unused)) GdkEventMotion *event,
+			 __attribute__((unused)) gpointer        data)
+{
+    int x,pos,w;
+    //Holdable *tapeInHand = objectInHand;
+   
+
+    x = (int) event->x;
+
+    if(!motionDetected)
+    {
+	motionDetected = TRUE;
+    }
+
+    tapeSlideX = mousePressedAtX  - x;
+
+   // Limit slide to keep tape on screen  YUK! Wrong Magic numbers !
+    pos = handPosition + tapeSlideX;
+
+
+    printf("%s called %d %d %d ",__FUNCTION__,tapeSlideX,handPosition,pos);
+
+    w = (tapeWindowWidth / 2) - 75;
+    
+    if(pos < -w)
+    {
+	printf("1");
+	tapeSlideX = -w - handPosition ;
+    }
+    if(pos > (((signed) fileDownloadLength*8)+200) )
+    {
+	printf("2");
+	tapeSlideX = -(handPosition) + (fileDownloadLength*8)+200;
+    }
+
+    printf("\n");
+
+
+    gtk_widget_queue_draw(tape);
+
+    return FALSE;
+}
+
+
+
+gboolean
+on_tapeImageDrawingArea_button_press_event(__attribute__((unused))GtkWidget *tape,
+				  __attribute__((unused))GdkEventButton *event,
+				  __attribute__((unused))gpointer data)
+{
+    printf("%s called\n",__FUNCTION__);
+    mousePressedAtX = (int) event->x;
+    tapeSlideX = 0;
+
+    mouseMotionWhilePressedHandlerId =
+	g_signal_connect (G_OBJECT (tape), 
+			  "motion_notify_event",
+			  G_CALLBACK (mouseMotionWhilePressed), 
+			  NULL);
+    motionDetected = FALSE;
+
+
+    return FALSE;
+
+}
+
+gboolean
+on_tapeImageDrawingArea_button_release_event(__attribute__((unused))GtkWidget *tape,
+				    __attribute__((unused))GdkEventButton *event,
+				    __attribute__((unused))gpointer data)
+{
+
+    printf("%s called\n",__FUNCTION__);
+    /* Disable motion event handler if installed*/
+    if(mouseMotionWhilePressedHandlerId != 0)
+    {
+	g_signal_handler_disconnect (G_OBJECT (tape),
+				     mouseMotionWhilePressedHandlerId );
+	mouseMotionWhilePressedHandlerId  = 0;
+    }
+
+    //objectInHand->handPosition = objectInHand->handPosition + (tapeSlideX / 2);
+    //objectInHand->position = objectInHand->handPosition;
+    handPosition += tapeSlideX;
+    tapeSlideX = 0;
+
+    return FALSE;
+
+}
+
+
+/*-------------------------------------------------*/
+
 
 /******************************* Communications ****************************/
 #if 0
