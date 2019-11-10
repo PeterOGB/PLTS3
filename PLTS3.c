@@ -2139,12 +2139,6 @@ readPTSHandler(guchar rdChar)
 	    
 	    if(cnt > 0)
 	    {
-		
-		//printf("Sending a block\n");
-		//n = cnt;
-		//cp = buffer;
-		//while(n--) *cp++ &= 0x1F;
-		
 		writeChar = '\x81';
 		g_io_channel_write_chars(E803_channel,&writeChar,1,&written,&error);
 		writeChar = (gchar) (cnt & 0xFF);
@@ -2153,10 +2147,6 @@ readPTSHandler(guchar rdChar)
 		g_io_channel_write_chars(E803_channel,buffer,(gssize)cnt,&written,&error);
 		g_io_channel_flush(E803_channel,NULL);
 		*downloadedp += cnt;
-
-		//n = cnt;
-		//cp = buffer;
-		//while(n--) *cp++ |= '\x80';
 	    }
 	    else
 	    {
