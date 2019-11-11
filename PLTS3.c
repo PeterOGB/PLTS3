@@ -1666,7 +1666,6 @@ on_editorSaveButton_clicked(__attribute__((unused)) GtkButton *button,
     GString *utf8FileName;
     GtkTextIter start,end;
     guchar *utf8text;
-    gint length;
     gsize slength;
     
     telecode = convertToTelecode(FALSE);
