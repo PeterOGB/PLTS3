@@ -2479,7 +2479,7 @@ on_networkConnectButton_clicked(__attribute__((unused)) GtkButton *button,
     
     bcopy(hp->h_addr, &E803_server_name.sin_addr, (size_t) hp->h_length); 
     E803_server_name.sin_family = AF_INET; 
-    E803_server_name.sin_port = htons(7000);  ; 
+    E803_server_name.sin_port = htons(8038);  ; 
     
     n = connect(E803_socket, (struct sockaddr *)&E803_server_name,
 	      sizeof (E803_server_name));
