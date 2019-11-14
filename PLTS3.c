@@ -1542,7 +1542,7 @@ on_editorOldButton_clicked(__attribute__((unused)) GtkButton *widget,
 	}
 cleanUp:
 	if(dataBuffer) g_free(dataBuffer);
-	fileDownloadBuffer = NULL;
+	dataBuffer = NULL;
 	if(filename) g_free(filename);
 	if(utf8Filename) g_string_free(utf8Filename,TRUE);
 			 
