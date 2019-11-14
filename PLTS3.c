@@ -1469,8 +1469,8 @@ on_editorOldButton_clicked(__attribute__((unused)) GtkButton *widget,
 		gf = g_file_new_for_path(filename);
 
 		g_file_load_contents (gf,NULL,&dataBuffer,
-				      &fileDownloadLength,NULL,&error);
-		mask5holes(fileDownloadBuffer,fileDownloadLength);
+				      &length,NULL,&error);
+		mask5holes(dataBuffer,length);
 		//TODO Check error returned
 
 		g_object_unref(gf);
