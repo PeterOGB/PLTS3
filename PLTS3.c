@@ -82,6 +82,7 @@ GtkWidget *punchingToTapeButton;
 GtkTextView *readerTextView;
 GtkTextBuffer *readerTextBuffer;
 gsize fileDownloadLength;
+gsize fileLength;
 gsize fileDownloaded;
 gchar *fileDownloadBuffer;
 char *readerFileName = NULL;
@@ -535,12 +536,12 @@ on_fileDownloadSetFileButton_clicked(__attribute__((unused)) GtkButton *button,
 	gf = g_file_new_for_path(readerFileName);
 	
 	g_file_load_contents (gf,NULL,&fileDownloadBuffer,
-			      &fileDownloadLength,NULL,&error);
-	mask5holes(fileDownloadBuffer,fileDownloadLength);
+			      &fileLength,NULL,&error);
+	mask5holes(fileDownloadBuffer,fileLength);
 	g_object_unref(gf);
     }
     
-    if(fileDownloadLength > 65536)
+    if(fileLength > 65536)
     {
 	res = gtk_dialog_run (GTK_DIALOG (fileTooBigDialog));
 	gtk_widget_hide(fileTooBigDialog);
@@ -549,7 +550,7 @@ on_fileDownloadSetFileButton_clicked(__attribute__((unused)) GtkButton *button,
 	return GDK_EVENT_PROPAGATE ;
     }
 	    
-    if(!isTelecodeTape(fileDownloadBuffer,fileDownloadLength))
+    if(!isTelecodeTape(fileDownloadBuffer,fileLength))
     {
     	res = gtk_dialog_run (GTK_DIALOG (notTelecodeDialog));
 	gtk_widget_hide(notTelecodeDialog);
@@ -567,7 +568,7 @@ on_fileDownloadSetFileButton_clicked(__attribute__((unused)) GtkButton *button,
 	gsize n;
 	char *cp;
 	cp = fileDownloadBuffer;
-	n = fileDownloadLength;
+	n = fileLength;
 	while(n--) *cp++ |= '\x80';
     }
 #endif
@@ -613,7 +614,7 @@ on_fileDownloadButton_clicked(__attribute__((unused)) GtkButton *button,
 
     // Check if file is binary tape image file
 
-    if(isBinaryTape(fileDownloadBuffer,fileDownloadLength))
+    if(isBinaryTape(fileDownloadBuffer,fileLength))
     {
 	g_info("BINARY TAPE\n");
 	gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(readerEchoButton),FALSE);
@@ -628,11 +629,11 @@ on_fileDownloadButton_clicked(__attribute__((unused)) GtkButton *button,
 
     // The cast to intmax_t makes this work as expected on 
     // the 32 bit ARM CPU inthe Pi. 
-    printf("file size = %jd \n",(__intmax_t)fileDownloadLength);
+    printf("file size = %jd \n",(__intmax_t)fileLength);
     fileDownloaded = 0;
 
- 
-    fileDownloadLength -= ((gsize)handPosition/8);
+    // Don't modify the fileLength as it may get downloaded again !  (bug fix) 
+    fileDownloadLength = fileLength - ((gsize)handPosition/8);
     downloadLengthp = &fileDownloadLength;
     downloadedp = &fileDownloaded;
     downloadBuffer = &fileDownloadBuffer[handPosition/8];
@@ -693,15 +694,15 @@ on_fileDownloadChooseRecentFileButton_clicked(__attribute__((unused)) GtkButton 
 	gf = g_file_new_for_path(readerFileName);
 
 	g_file_load_contents (gf,NULL,&fileDownloadBuffer,
-			      &fileDownloadLength,NULL,&error);
-	mask5holes(fileDownloadBuffer,fileDownloadLength);
+			      &fileLength,NULL,&error);
+	mask5holes(fileDownloadBuffer,fileLength);
 	
 	//TODO Check error returned
 
 	g_object_unref(gf);
     }
 
-    if(fileDownloadLength > 65536)
+    if(fileLength > 65536)
     {
 	res = gtk_dialog_run (GTK_DIALOG (fileTooBigDialog));
 	gtk_widget_hide(fileTooBigDialog);
@@ -710,7 +711,7 @@ on_fileDownloadChooseRecentFileButton_clicked(__attribute__((unused)) GtkButton 
 	return GDK_EVENT_STOP ;
     }
 	    
-    if(!isTelecodeTape(fileDownloadBuffer,fileDownloadLength))
+    if(!isTelecodeTape(fileDownloadBuffer,fileLength))
     {
     	res = gtk_dialog_run (GTK_DIALOG (notTelecodeDialog));
 	gtk_widget_hide(notTelecodeDialog);
@@ -1863,9 +1864,9 @@ on_tapeImageDrawingArea_draw(GtkWidget *da,
 	    firstChar = (Position - MIDPOINT) / 8;
 	}
 	
-	if( (MIDPOINT + ((int)fileDownloadLength*8) - Position) < MAXTODRAW)
+	if( (MIDPOINT + ((int)fileLength*8) - Position) < MAXTODRAW)
 	{
-	    toDraw -= MAXTODRAW - (MIDPOINT + ((int)fileDownloadLength*8) - Position);
+	    toDraw -= MAXTODRAW - (MIDPOINT + ((int)fileLength*8) - Position);
 	}
 
 	// Creat whole rows of pixels at a time
@@ -2015,9 +2016,9 @@ mouseMotionWhilePressed (__attribute__((unused)) GtkWidget      *tape,
     {
 	tapeSlideX = -w - handPosition ;
     }
-    if(pos > (((signed) fileDownloadLength*8)+200) )
+    if(pos > (((signed) fileLength*8)+200) )
     {
-	tapeSlideX = -(handPosition) + ((int)fileDownloadLength*8)+200;
+	tapeSlideX = -(handPosition) + ((int)fileLength*8)+200;
     }
 
     gtk_widget_queue_draw(tape);
